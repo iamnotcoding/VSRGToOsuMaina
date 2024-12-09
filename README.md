@@ -1,2 +1,2 @@
 # VSRGToOsuMaina
-A program that reads a video and create a osu maina map out of it
+A program that reads a video and creates a osu maina map out of it
