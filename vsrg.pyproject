@@ -1,5 +1,7 @@
 {
     "files": [
-        "mywidget.py"
+        "mywidget.py",
+        "mainwindow.ui",
+        ".gitignore"
     ]
 }
