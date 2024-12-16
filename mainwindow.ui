@@ -189,7 +189,7 @@
      </rect>
     </property>
     <property name="text">
-     <string>ms (+ : note earlier)</string>
+     <string>ms (+ : note later)</string>
     </property>
    </widget>
    <widget class="QSpinBox" name="global_offset_spinBox">
