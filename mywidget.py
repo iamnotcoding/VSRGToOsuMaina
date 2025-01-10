@@ -1,7 +1,12 @@
-import sys
+import os, sys
+import copy
+import threading
+import ffmpeg
+import zipfile
 from PySide6.QtWidgets import QApplication, QMainWindow, QMessageBox, QFileDialog
 from PySide6.QtCore import QObject, QFile, Slot, QThread, Signal
 from ui_mainwindow import Ui_MainWindow
+import maina
 
 import logging
 import cv2 as cv
@@ -9,6 +14,24 @@ import threading
 
 logging.basicConfig(stream=sys.stdout, level=logging.INFO)
 
+def is_there_a_note(frame, p):  # p : (y, x)
+    result = True
+    MAX_ERROR = 0
+    # px (in order to avoid recongnizing bar lines as notes)
+    min_note_height = 0
+    empty_color = (0, 0, 0)
+
+    for i in range(-(min_note_height // 2), min_note_height // 2 + 1):
+        # opencv frames get (y, x) coordinates
+        pixel_color = frame[p[0] + i][p[1]]
+
+        if not ((abs(pixel_color[0] - empty_color[0]) > MAX_ERROR
+                 or abs(pixel_color[1] - empty_color[1]) > MAX_ERROR
+                 or abs(pixel_color[2] - empty_color[2]) > MAX_ERROR)):
+
+            result = False
+
+    return result
 
 class GUIMsgboxCritClass(QObject):
     sig = Signal(str, str)
@@ -20,20 +43,6 @@ class GUIMsgboxCritClass(QObject):
         super(GUIMsgboxCritClass, self).__init__()
         self.title = title
         self.text = text
-
-
-class StartPreviewWorker(QThread):
-    def __init__(self, parent_class):
-        super(StartPreviewWorker, self).__init__()
-        self.parent_class = parent_class
-
-    def run(self):
-        self.parent_class.start_preview_func()
-
-    def __del__(self):
-        self.wait()
-        print("Thread exited")
-
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -105,10 +114,26 @@ class MainWindow(QMainWindow):
             self.update_use_video_audio_flag
         )
 
+        self.ui.show_progress_checkBox.stateChanged.connect(self.update_show_progress_flag)
+
         self.ui.run_pushButton.clicked.connect(self.run)
 
     @Slot()
     def run(self):
+        osu_file_name = "map.osu"
+        osz_file_name = "map.osz"
+
+        self.create_osu_file(osu_file_name)
+        logging.info(f"Created the file {osu_file_name}")
+
+        if self.is_use_video_audio_flag:
+            self.extract_audio_from_vid('audio.mp3')
+            logging.info("Extracted an audio from the video")
+
+        self.create_osz_file(osz_file_name, osu_file_name)
+        logging.info("Created an osz file map.osz")
+
+    def create_osu_file(self, osu_file_name):
         if self.lane_start >= self.lane_end:
             crit_msgbox_sig = GUIMsgboxCritClass(
                 "Error", "Lane end have to be larger than lane start")
@@ -116,13 +141,124 @@ class MainWindow(QMainWindow):
             crit_msgbox_sig.invoke()
             return 1
 
-    # TODO ...
+        if self.preview_thread is not None:
+            self.preview_thread._stop()
+            cv.destroyAllWindows()
+            logging.info("Stopped preview_thread")
 
-    # This will be invoked in sub threads
-    @Slot(str, str)
-    def GUI_msgbox_critial(self, title, text):
-        print('hi')
-        QMessageBox.critical(self, title, text)
+        osu_file_name = "map.osu"
+
+        file = open(osu_file_name, "+w")
+
+        if self.is_show_progress_flag:
+            cv.namedWindow("Image", cv.WINDOW_NORMAL)
+
+        vid_capture = cv.VideoCapture(self.vid_file_path)
+
+        if (vid_capture.isOpened() == False):
+            logging.error("Error opening the video file")
+            raise RuntimeError
+
+        fps = vid_capture.get(cv.CAP_PROP_FPS)
+        logging.info(f"Detected video frame rate : {fps}")
+
+        ret, frame = vid_capture.read()  # the first frame
+
+        if not ret:
+            logging.info("Couldn't read the video")
+            raise RuntimeError
+
+        height, width, channels = frame.shape
+
+        line_thickness = 10
+
+        maina.create_header(file, self.key_count)
+        maina.start_note_section(file)
+
+        frame_count = 1
+
+        note_start_frame = [0 for _ in range(self.key_count)]
+
+        while (vid_capture.isOpened()):
+            ret, frame = vid_capture.read()
+
+            if ret == False:
+                break
+
+            drawn_frame = copy.deepcopy(frame) # since it's a numpy array
+
+            cv.line(drawn_frame, (self.lane_start -
+                            line_thickness, 1), (self.lane_start -
+                                                 line_thickness, height), (0, 255, 0), line_thickness)
+            cv.line(drawn_frame, (self.lane_end +
+                            line_thickness, 1), (self.lane_end +
+                                                 line_thickness, height), (0, 0, 255), line_thickness)
+
+            cv.line(drawn_frame, (self.lane_start, height -
+                            self.detection_height), (self.lane_end, height -
+                                                     self.detection_height), (255, 255, 255), line_thickness)
+
+            for i in range(self.key_count):
+                lane_width = self.lane_end - self.lane_start
+                x = int((self.lane_start + lane_width / 4 * i +
+                        self.lane_start + lane_width / 4 * (i + 1))/2)
+                p = (height - self.detection_height , x)
+                is_there_a_note_flag = is_there_a_note(frame, p)
+
+                #cv.circle(frame, (p[1], p[0]), 10, (255, 0, 255), -1)
+
+                if is_there_a_note_flag:
+                    if note_start_frame[i] == 0:
+                        note_start_frame[i] = frame_count
+
+                    #print('▇', end=' ')
+                else:
+                    #print(' ', end=' ')
+
+                    if note_start_frame[i] != 0:
+                        # if long note
+                        if (frame_count - note_start_frame[i]) / fps > 0.05:
+                            if self.is_show_progress_flag:
+                                cv.circle(drawn_frame, (p[1], p[0]), 40, (255, 0, 255), -1)
+
+                            maina.create_LN(file, self.key_count, i + 1,int(note_start_frame[i] / fps * 1000) + self.global_offset + self.LN_hold_offset, int(frame_count / fps * 1000) + self.global_offset + self.LN_release_offset)
+                        else:  # if regular note
+                            if self.is_show_progress_flag:
+                                cv.circle(drawn_frame, (p[1], p[0]), 15, (0, 255, 0), -1)
+
+                            maina.create_RN(file, self.key_count, i + 1, int(note_start_frame[i] / fps * 1000) + self.global_offset + self.RN_offset)
+                    else:
+                        if self.is_show_progress_flag:
+                            cv.circle(drawn_frame, (p[1], p[0]), 15, (0, 0, 255), -1)
+
+                    note_start_frame[i] = 0
+
+            if self.is_show_progress_flag:
+                cv.imshow('Image', drawn_frame)
+                cv.waitKey(int(1 / fps * 1000))
+
+            frame_count += 1
+
+        if self.is_show_progress_flag:
+            cv.destroyAllWindows()
+
+        file.close()
+
+    def extract_audio_from_vid(self):
+        stream = ffmpeg.input(self.vid_file_path)
+        stream = ffmpeg.hflip(stream)
+        stream = ffmpeg.output(stream, "audio.mp3")
+        ffmpeg.run(stream)
+
+    def create_osz_file(self, osz_file_name, osu_file_name):
+        if self.is_use_video_audio_flag:
+            final_audio_file_path = "./audio.mp3"
+        else:
+            final_audio_file_path = self.audio_file_path
+
+        with zipfile.ZipFile(osz_file_name, 'w') as myzip:
+            myzip.write(osu_file_name)
+            myzip.write(final_audio_file_path, arcname=os.path.basename(final_audio_file_path))
 
     @Slot()
     def update_show_progress_flag(self):
@@ -261,17 +397,17 @@ class MainWindow(QMainWindow):
             if is_exit_preview_flag:
                 break
 
-        cv.destroyAllWindows()
+        #cv.destroyAllWindows()
 
     @Slot()
     def start_preview(self):
         if self.preview_thread is not None:
-            self.preview_thread.quit()
+            self.preview_thread._stop()
             logging.info("Joined preview_thread")
 
-        self.preview_thread = StartPreviewWorker(self)
+        self.preview_thread =threading.Thread(target=self.start_preview_func)
         logging.info("Created preview_thread")
-        self.preview_thread.start()
+        self.preview_thread.run()
 
 
 if __name__ == "__main__":
@@ -283,7 +419,7 @@ if __name__ == "__main__":
     ret = app.exec()
 
     if window.preview_thread is not None:
-        window.preview_thread.quit()
+        window.preview_thread._stop()
         logging.info("Joined preview_thread")
 
     cv.destroyAllWindows()

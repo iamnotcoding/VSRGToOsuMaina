@@ -2,6 +2,7 @@
     "files": [
         "mywidget.py",
         "mainwindow.ui",
-        ".gitignore"
+        ".gitignore",
+        ".changes"
     ]
 }

@@ -1,1 +1,4 @@
 PySide6
+opencv-python
+ffmpeg-python
+ffmpeg (executable file ifself)
