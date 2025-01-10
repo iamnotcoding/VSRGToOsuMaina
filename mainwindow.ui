@@ -137,7 +137,7 @@
      </rect>
     </property>
     <property name="text">
-     <string>(blue)</string>
+     <string>(green)</string>
     </property>
    </widget>
    <widget class="QLabel" name="label_5">
