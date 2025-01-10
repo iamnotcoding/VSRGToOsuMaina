@@ -172,7 +172,7 @@ class MainWindow(QMainWindow):
 
         line_thickness = 10
 
-        maina.create_header(file, self.key_count)
+        maina.create_header(file, os.path.basename(self.audio_file_path), self.key_count)
         maina.start_note_section(file)
 
         frame_count = 1

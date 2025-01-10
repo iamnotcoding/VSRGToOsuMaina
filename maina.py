@@ -1,9 +1,9 @@
-def create_header(file, key_count, hp=8, od=8):
+def create_header(file, audio_file_name, key_count, hp=8, od=8):
     file.write(f'''
 osu file format v14
 
 [General]
-AudioFilename: audio.mp3
+AudioFilename: {audio_file_name}
 AudioLeadIn: 0
 PreviewTime: 0
 Countdown: 0
