@@ -132,8 +132,8 @@ class MainWindow(QMainWindow):
             self.extract_audio_from_vid('audio.mp3')
             logging.info("Extracted an audio from the video")
 
-        if self.create_osz_file(osz_file_name, osu_file_name):
-            logging.info("Created an osz file map.osz")
+        self.create_osz_file(osz_file_name, osu_file_name)
+        logging.info("Created an osz file map.osz")
 
     def create_osu_file(self, osu_file_name):
         if self.lane_start >= self.lane_end:
@@ -237,7 +237,7 @@ class MainWindow(QMainWindow):
                     note_start_frame[i] = 0
 
 
-            if cv.getWindowProperty('Image', cv.WND_PROP_VISIBLE) < 1:
+            if cv.getWindowProperty('Image', cv.WND_PROP_VISIBLE) < 1 and self.is_show_progress_flag:
                 is_exit_preview_flag = True
                 break
 
