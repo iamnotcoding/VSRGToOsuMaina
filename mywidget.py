@@ -123,15 +123,17 @@ class MainWindow(QMainWindow):
         osu_file_name = "map.osu"
         osz_file_name = "map.osz"
 
-        self.create_osu_file(osu_file_name)
-        logging.info(f"Created the file {osu_file_name}")
+        if self.create_osu_file(osu_file_name):
+            logging.info(f"Created the file {osu_file_name}")
+        else:
+            logging.info("Creating an osu file was interrupted")
 
         if self.is_use_video_audio_flag:
             self.extract_audio_from_vid('audio.mp3')
             logging.info("Extracted an audio from the video")
 
-        self.create_osz_file(osz_file_name, osu_file_name)
-        logging.info("Created an osz file map.osz")
+        if self.create_osz_file(osz_file_name, osu_file_name):
+            logging.info("Created an osz file map.osz")
 
     def create_osu_file(self, osu_file_name):
         if self.lane_start >= self.lane_end:
@@ -178,6 +180,7 @@ class MainWindow(QMainWindow):
         frame_count = 1
 
         note_start_frame = [0 for _ in range(self.key_count)]
+        is_exit_preview_flag = False
 
         while (vid_capture.isOpened()):
             ret, frame = vid_capture.read()
@@ -233,6 +236,11 @@ class MainWindow(QMainWindow):
 
                     note_start_frame[i] = 0
 
+
+            if cv.getWindowProperty('Image', cv.WND_PROP_VISIBLE) < 1:
+                is_exit_preview_flag = True
+                break
+
             if self.is_show_progress_flag:
                 cv.imshow('Image', drawn_frame)
                 cv.waitKey(int(1 / fps * 1000))
@@ -243,6 +251,8 @@ class MainWindow(QMainWindow):
             cv.destroyAllWindows()
 
         file.close()
+
+        return not is_exit_preview_flag
 
     def extract_audio_from_vid(self):
         stream = ffmpeg.input(self.vid_file_path)
