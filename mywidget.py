@@ -135,6 +135,9 @@ class MainWindow(QMainWindow):
         self.create_osz_file(osz_file_name, osu_file_name)
         logging.info("Created an osz file map.osz")
 
+        os.remove(osu_file_name)
+        logging.info(f"Deleted {osu_file_name}")
+
     def create_osu_file(self, osu_file_name):
         if self.lane_start >= self.lane_end:
             crit_msgbox_sig = GUIMsgboxCritClass(
